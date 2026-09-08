@@ -150,7 +150,9 @@ public abstract class AbstractSCIMConnector<UT extends SCIMUser<? extends SCIMBa
             if (key == null) {
                 List<UT> users = null;
                 int remainingResults = -1;
-                int pagesSize = Optional.ofNullable(options.getPageSize()).orElse(-1);
+                int pagesSize = Optional.ofNullable(options.getPageSize())
+                        .or(() -> Optional.ofNullable(configuration.getDefaultPageSize()))
+                        .orElse(-1);
                 String cookie = options.getPagedResultsCookie();
 
                 try {
@@ -216,7 +218,9 @@ public abstract class AbstractSCIMConnector<UT extends SCIMUser<? extends SCIMBa
             if (key == null) {
                 List<GT> groups = null;
                 int remainingResults = -1;
-                int pagesSize = Optional.ofNullable(options.getPageSize()).orElse(-1);
+                int pagesSize = Optional.ofNullable(options.getPageSize())
+                        .or(() -> Optional.ofNullable(configuration.getDefaultPageSize()))
+                        .orElse(-1);
                 String cookie = options.getPagedResultsCookie();
 
                 try {

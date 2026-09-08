@@ -106,6 +106,8 @@ public class SCIMConnectorConfiguration extends AbstractConfiguration implements
 
     private boolean enableMemberRemovalByPath = true;
 
+    private Integer defaultPageSize;
+
     @ConfigurationProperty(order = 1,
             displayMessageKey = "baseAddress.display",
             helpMessageKey = "baseAddress.help",
@@ -454,6 +456,17 @@ public class SCIMConnectorConfiguration extends AbstractConfiguration implements
 
     public void setEnableMemberRemovalByPath(final boolean enableMemberRemovalByPath) {
         this.enableMemberRemovalByPath = enableMemberRemovalByPath;
+    }
+
+    @ConfigurationProperty(displayMessageKey = "defaultPageSize.display",
+            helpMessageKey = "defaultPageSize.help",
+            order = 33)
+    public Integer getDefaultPageSize() {
+        return defaultPageSize;
+    }
+
+    public void setDefaultPageSize(final Integer defaultPageSize) {
+        this.defaultPageSize = defaultPageSize;
     }
 
     @Override
