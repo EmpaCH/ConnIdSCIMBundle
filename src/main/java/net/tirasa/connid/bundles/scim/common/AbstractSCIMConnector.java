@@ -147,55 +147,45 @@ public abstract class AbstractSCIMConnector<UT extends SCIMUser<? extends SCIMBa
         }
 
         if (ObjectClass.ACCOUNT.equals(objectClass)) {
+            //No key, get all objects (users)
             if (key == null) {
-                List<UT> users = null;
-                int remainingResults = -1;
                 int pagesSize = Optional.ofNullable(options.getPageSize()).orElse(-1);
                 int defaultPageSize = Optional.ofNullable(configuration.getDefaultPageSize()).orElse(-1);
                 String cookie = options.getPagedResultsCookie();
 
                 try {
                     if (pagesSize != -1) {
-                        // MidPoint is driving paging externally — return one page + cookie
-                        if (StringUtil.isNotBlank(cookie)) {
-                            PagedResults<UT> pagedResult =
-                                    client.getAllUsers(Integer.valueOf(cookie), pagesSize, attributesToGet);
-                            users = pagedResult.getResources();
+                        // MidPoint drives paging externally: one page per call, cookie handed back
+                        int startIndex = StringUtil.isNotBlank(cookie) ? Integer.parseInt(cookie) : 1;
+                        PagedResults<UT> pagedResult = client.getAllUsers(startIndex, pagesSize, attributesToGet);
+                        List<UT> page = pagedResult.getResources();
+                        page.forEach(u -> handler.handle(fromUser(u, attributesToGet)));
+                        cookie = page.size() >= pagesSize
+                                ? String.valueOf(pagedResult.getStartIndex() + page.size()) : null;
 
-                            cookie = users.size() >= pagesSize ? String.valueOf(
-                                    pagedResult.getStartIndex() + users.size()) : null;
-                        } else {
-                            PagedResults<UT> pagedResult = client.getAllUsers(1, pagesSize, attributesToGet);
-                            users = pagedResult.getResources();
-
-                            cookie = users.size() >= pagesSize ? String.valueOf(
-                                    pagedResult.getStartIndex() + users.size()) : null;
-                        }
                     } else if (defaultPageSize != -1) {
-                        // MidPoint is streaming (no PAGE_SIZE) — loop all pages internally
-                        users = new java.util.ArrayList<>();
+                        // Streaming mode: loop all pages internally,
+                        // pass each result through immediately to the handler
                         int startIndex = 1;
                         List<UT> page;
                         do {
                             PagedResults<UT> pagedResult =
                                     client.getAllUsers(startIndex, defaultPageSize, attributesToGet);
                             page = pagedResult.getResources();
-                            users.addAll(page);
+                            page.forEach(u -> handler.handle(fromUser(u, attributesToGet)));
                             startIndex = pagedResult.getStartIndex() + page.size();
                         } while (!page.isEmpty() && page.size() >= defaultPageSize);
+
                     } else {
-                        users = client.getAllUsers(attributesToGet);
+                        client.getAllUsers(attributesToGet)
+                                .forEach(u -> handler.handle(fromUser(u, attributesToGet)));
                     }
                 } catch (Exception e) {
                     SCIMUtils.wrapGeneralError("While getting Users!", e);
                 }
 
-                for (UT user : users) {
-                    handler.handle(fromUser(user, attributesToGet));
-                }
-
                 if (handler instanceof SearchResultsHandler) {
-                    ((SearchResultsHandler) handler).handleResult(new SearchResult(cookie, remainingResults));
+                    ((SearchResultsHandler) handler).handleResult(new SearchResult(cookie, -1));
                 }
             } else {
                 UT result = null;
