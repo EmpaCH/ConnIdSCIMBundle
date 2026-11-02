@@ -44,6 +44,7 @@ import net.tirasa.connid.bundles.scim.common.types.IMCanonicalType;
 import net.tirasa.connid.bundles.scim.common.types.PhoneNumberCanonicalType;
 import net.tirasa.connid.bundles.scim.common.types.PhotoCanonicalType;
 import net.tirasa.connid.bundles.scim.common.utils.SCIMAttributeUtils;
+import net.tirasa.connid.bundles.scim.common.utils.SCIMSearchWindow;
 import net.tirasa.connid.bundles.scim.common.utils.SCIMUtils;
 import net.tirasa.connid.bundles.scim.v11.dto.SCIMv11EnterpriseUser;
 import net.tirasa.connid.bundles.scim.v2.dto.SCIMPatchOperation;
@@ -149,36 +150,27 @@ public abstract class AbstractSCIMConnector<UT extends SCIMUser<? extends SCIMBa
         if (ObjectClass.ACCOUNT.equals(objectClass)) {
             //No key, get all objects (users)
             if (key == null) {
-                int pagesSize = Optional.ofNullable(options.getPageSize()).orElse(-1);
-                int defaultPageSize = Optional.ofNullable(configuration.getDefaultPageSize()).orElse(-1);
-                String cookie = options.getPagedResultsCookie();
-
+                String cookie = null;
+                SCIMSearchWindow window = SCIMSearchWindow.of(options, configuration.getDefaultPageSize());
                 try {
-                    if (pagesSize != -1) {
-                        // MidPoint drives paging externally: one page per call, cookie handed back
-                        int startIndex = StringUtil.isNotBlank(cookie) ? Integer.parseInt(cookie) : 1;
-                        PagedResults<UT> pagedResult = client.getAllUsers(startIndex, pagesSize, attributesToGet);
-                        List<UT> page = pagedResult.getResources();
-                        page.forEach(u -> handler.handle(fromUser(u, attributesToGet)));
-                        cookie = page.size() >= pagesSize
-                                ? String.valueOf(pagedResult.getStartIndex() + page.size()) : null;
-
-                    } else if (defaultPageSize != -1) {
-                        // Streaming mode: loop all pages internally,
-                        // pass each result through immediately to the handler
-                        int startIndex = 1;
+                    if (window.isStreaming()) {
+                        // No paging options from the caller: read every page here and hand each result over at once.
+                        int startIndex = window.getStart();
                         List<UT> page;
                         do {
                             PagedResults<UT> pagedResult =
-                                    client.getAllUsers(startIndex, defaultPageSize, attributesToGet);
+                                    client.getAllUsers(startIndex, window.getSize(), attributesToGet);
                             page = pagedResult.getResources();
                             page.forEach(u -> handler.handle(fromUser(u, attributesToGet)));
-                            startIndex = pagedResult.getStartIndex() + page.size();
-                        } while (!page.isEmpty() && page.size() >= defaultPageSize);
-
+                            startIndex += page.size();
+                        } while (!page.isEmpty() && page.size() >= window.getSize());
                     } else {
-                        client.getAllUsers(attributesToGet)
-                                .forEach(u -> handler.handle(fromUser(u, attributesToGet)));
+                        // The caller pages: one window per call, with the cookie for its next call.
+                        PagedResults<UT> pagedResult =
+                                client.getAllUsers(window.getStart(), window.getSize(), attributesToGet);
+                        List<UT> page = pagedResult.getResources();
+                        page.forEach(u -> handler.handle(fromUser(u, attributesToGet)));
+                        cookie = window.nextCookie(page.size());
                     }
                 } catch (Exception e) {
                     SCIMUtils.wrapGeneralError("While getting Users!", e);
@@ -218,55 +210,33 @@ public abstract class AbstractSCIMConnector<UT extends SCIMUser<? extends SCIMBa
             }
         } else if (ObjectClass.GROUP.equals(objectClass)) {
             if (key == null) {
-                List<GT> groups = null;
-                int remainingResults = -1;
-                int pagesSize = Optional.ofNullable(options.getPageSize())
-                        .or(() -> Optional.ofNullable(configuration.getDefaultPageSize()))
-                        .orElse(-1);
-                String cookie = options.getPagedResultsCookie();
-
+                String cookie = null;
+                SCIMSearchWindow window = SCIMSearchWindow.of(options, configuration.getDefaultPageSize());
                 try {
-                    if (options.getPageSize() == null && pagesSize != -1) {
-                        // Streaming mode, as for users: MidPoint did not page, so loop all pages here and pass
-                        // each result through immediately. Without this, only the first page reaches MidPoint.
-                        int startIndex = 1;
+                    if (window.isStreaming()) {
+                        // No paging options from the caller: read every page here and hand each group over at once.
+                        int startIndex = window.getStart();
                         List<GT> page;
                         do {
-                            PagedResults<GT> pagedResult = client.getAllGroups(startIndex, pagesSize);
+                            PagedResults<GT> pagedResult = client.getAllGroups(startIndex, window.getSize());
                             page = pagedResult.getResources();
                             page.forEach(g -> handler.handle(fromGroup(g, attributesToGet)));
-                            startIndex = pagedResult.getStartIndex() + page.size();
-                        } while (!page.isEmpty() && page.size() >= pagesSize);
-                        groups = Collections.emptyList();
-                        cookie = null;
-                    } else if (pagesSize != -1) {
-                        if (StringUtil.isNotBlank(cookie)) {
-                            PagedResults<GT> pagedResult = client.getAllGroups(Integer.valueOf(cookie), pagesSize);
-                            groups = pagedResult.getResources();
-
-                            cookie = groups.size() >= pagesSize ? String.valueOf(
-                                    pagedResult.getStartIndex() + groups.size()) : null;
-                        } else {
-                            PagedResults<GT> pagedResult = client.getAllGroups(1, pagesSize);
-                            groups = pagedResult.getResources();
-
-                            cookie = groups.size() >= pagesSize ? String.valueOf(
-                                    pagedResult.getStartIndex() + groups.size()) : null;
-                        }
+                            startIndex += page.size();
+                        } while (!page.isEmpty() && page.size() >= window.getSize());
                     } else {
-                        groups = client.getAllGroups();
+                        // The caller pages: one window per call, with the cookie for its next call.
+                        PagedResults<GT> pagedResult = client.getAllGroups(window.getStart(), window.getSize());
+                        List<GT> page = pagedResult.getResources();
+                        page.forEach(g -> handler.handle(fromGroup(g, attributesToGet)));
+                        cookie = window.nextCookie(page.size());
                     }
                 } catch (Exception e) {
                     LOG.error(e, "Could not search for Groups");
                     SCIMUtils.wrapGeneralError("Could not search for Groups", e);
                 }
 
-                for (GT group : groups) {
-                    handler.handle(fromGroup(group, attributesToGet));
-                }
-
                 if (handler instanceof SearchResultsHandler) {
-                    ((SearchResultsHandler) handler).handleResult(new SearchResult(cookie, remainingResults));
+                    ((SearchResultsHandler) handler).handleResult(new SearchResult(cookie, -1));
                 }
             } else {
                 GT result = null;
