@@ -151,27 +151,12 @@ public abstract class AbstractSCIMConnector<UT extends SCIMUser<? extends SCIMBa
             //No key, get all objects (users)
             if (key == null) {
                 String cookie = null;
-                SCIMSearchWindow window = SCIMSearchWindow.of(options, configuration.getDefaultPageSize());
                 try {
-                    if (window.isStreaming()) {
-                        // No paging options from the caller: read every page here and hand each result over at once.
-                        int startIndex = window.getStart();
-                        List<UT> page;
-                        do {
-                            PagedResults<UT> pagedResult =
-                                    client.getAllUsers(startIndex, window.getSize(), attributesToGet);
-                            page = pagedResult.getResources();
-                            page.forEach(u -> handler.handle(fromUser(u, attributesToGet)));
-                            startIndex += page.size();
-                        } while (!page.isEmpty() && page.size() >= window.getSize());
-                    } else {
-                        // The caller pages: one window per call, with the cookie for its next call.
-                        PagedResults<UT> pagedResult =
-                                client.getAllUsers(window.getStart(), window.getSize(), attributesToGet);
-                        List<UT> page = pagedResult.getResources();
-                        page.forEach(u -> handler.handle(fromUser(u, attributesToGet)));
-                        cookie = window.nextCookie(page.size());
-                    }
+                    cookie = SCIMSearchWindow.read(
+                            SCIMSearchWindow.of(options, configuration.getDefaultPageSize()),
+                            (start, size) -> client.getAllUsers(start, size, attributesToGet).getResources(),
+                            u -> handler.handle(fromUser(u, attributesToGet)))
+                            .orElse(null);
                 } catch (Exception e) {
                     SCIMUtils.wrapGeneralError("While getting Users!", e);
                 }
@@ -211,25 +196,12 @@ public abstract class AbstractSCIMConnector<UT extends SCIMUser<? extends SCIMBa
         } else if (ObjectClass.GROUP.equals(objectClass)) {
             if (key == null) {
                 String cookie = null;
-                SCIMSearchWindow window = SCIMSearchWindow.of(options, configuration.getDefaultPageSize());
                 try {
-                    if (window.isStreaming()) {
-                        // No paging options from the caller: read every page here and hand each group over at once.
-                        int startIndex = window.getStart();
-                        List<GT> page;
-                        do {
-                            PagedResults<GT> pagedResult = client.getAllGroups(startIndex, window.getSize());
-                            page = pagedResult.getResources();
-                            page.forEach(g -> handler.handle(fromGroup(g, attributesToGet)));
-                            startIndex += page.size();
-                        } while (!page.isEmpty() && page.size() >= window.getSize());
-                    } else {
-                        // The caller pages: one window per call, with the cookie for its next call.
-                        PagedResults<GT> pagedResult = client.getAllGroups(window.getStart(), window.getSize());
-                        List<GT> page = pagedResult.getResources();
-                        page.forEach(g -> handler.handle(fromGroup(g, attributesToGet)));
-                        cookie = window.nextCookie(page.size());
-                    }
+                    cookie = SCIMSearchWindow.read(
+                            SCIMSearchWindow.of(options, configuration.getDefaultPageSize()),
+                            (start, size) -> client.getAllGroups(start, size).getResources(),
+                            g -> handler.handle(fromGroup(g, attributesToGet)))
+                            .orElse(null);
                 } catch (Exception e) {
                     LOG.error(e, "Could not search for Groups");
                     SCIMUtils.wrapGeneralError("Could not search for Groups", e);
