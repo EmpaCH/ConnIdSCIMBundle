@@ -65,8 +65,8 @@
   <properties>
     <connid.version>1.5.2.1</connid.version>
 
-    <jackson.version>2.22.2</jackson.version>
-    <cxf.version>3.6.12</cxf.version>
+    <jackson.version>2.22.4</jackson.version>
+    <cxf.version>3.6.13</cxf.version>
 
     <targetJdk>11</targetJdk>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -142,7 +142,7 @@
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
-      <version>5.23.0</version>
+      <version>5.24.0</version>
       <scope>test</scope>
     </dependency>    
     <dependency>
