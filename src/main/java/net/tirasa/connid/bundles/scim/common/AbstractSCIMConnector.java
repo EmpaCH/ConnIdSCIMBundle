@@ -226,7 +226,20 @@ public abstract class AbstractSCIMConnector<UT extends SCIMUser<? extends SCIMBa
                 String cookie = options.getPagedResultsCookie();
 
                 try {
-                    if (pagesSize != -1) {
+                    if (options.getPageSize() == null && pagesSize != -1) {
+                        // Streaming mode, as for users: MidPoint did not page, so loop all pages here and pass
+                        // each result through immediately. Without this, only the first page reaches MidPoint.
+                        int startIndex = 1;
+                        List<GT> page;
+                        do {
+                            PagedResults<GT> pagedResult = client.getAllGroups(startIndex, pagesSize);
+                            page = pagedResult.getResources();
+                            page.forEach(g -> handler.handle(fromGroup(g, attributesToGet)));
+                            startIndex = pagedResult.getStartIndex() + page.size();
+                        } while (!page.isEmpty() && page.size() >= pagesSize);
+                        groups = Collections.emptyList();
+                        cookie = null;
+                    } else if (pagesSize != -1) {
                         if (StringUtil.isNotBlank(cookie)) {
                             PagedResults<GT> pagedResult = client.getAllGroups(Integer.valueOf(cookie), pagesSize);
                             groups = pagedResult.getResources();
